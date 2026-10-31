@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dev Stack Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;color:#222}
+    h1{margin-bottom:.2rem} .card{border:1px solid #ddd;border-radius:10px;padding:1rem;margin:1rem 0}
+    pre{background:#111;color:#0f0;padding:.75rem;border-radius:8px;max-height:220px;overflow:auto;font-size:.85rem}
+    button{padding:.45rem .9rem;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}
+    input{padding:.45rem;border:1px solid #ccc;border-radius:6px;width:60%}
+    .ok{color:#16a34a}.err{color:#dc2626}
+  </style>
+</head>
+<body>
+  <h1>Dev Stack Dashboard</h1>
+  <p>Frontend Node.js &middot; PHP API &middot; Python API &middot; WebSocket &middot; MQTT &middot; RabbitMQ</p>
+
+  <div class="card">
+    <h3>1. Health check API</h3>
+    <button onclick="checkApi('php', 8001)">Cek PHP API</button>
+    <button onclick="checkApi('python', 8002)">Cek Python API</button>
+    <pre id="api">klik tombol di atas...</pre>
+  </div>
+
+  <div class="card">
+    <h3>2. WebSocket (:8090)</h3>
+    <input id="wsMsg" placeholder="Ketik pesan...">
+    <button onclick="wsSend()">Kirim</button>
+    <span id="wsState">menghubungkan...</span>
+    <pre id="wsLog"></pre>
+  </div>
+
+  <div class="card">
+    <h3>3. MQTT over WebSocket (:9001)</h3>
+    <input id="mqttMsg" placeholder="Pesan ke topik demo/browser">
+    <button onclick="mqttSend()">Publish</button>
+    <span id="mqttState">menghubungkan...</span>
+    <pre id="mqttLog"></pre>
+  </div>
+
+  <div class="card">
+    <h3>4. Kirim ke RabbitMQ</h3>
+    <input id="rmqMsg" placeholder="Pesan untuk queue 'demo'">
+    <button onclick="rmq('php', 8001)">Via PHP</button>
+    <button onclick="rmq('python', 8002)">Via Python</button>
+    <pre id="rmqLog"></pre>
+  </div>
+
+<script>
+const host = location.hostname;
+const $ = (id) => document.getElementById(id);
+const add = (id, t) => { const e = $(id); e.textContent += t + "\n"; e.scrollTop = e.scrollHeight; };
+
+async function checkApi(name, port) {
+  $('api').textContent = `Memanggil ${name}...`;
+  try {
+    const r = await fetch(`http://${host}:${port}/health`);
+    $('api').textContent = JSON.stringify(await r.json(), null, 2);
+  } catch (e) { $('api').textContent = 'Error: ' + e.message; }
+}
+
+// ---- WebSocket ----
+const ws = new WebSocket(`ws://${host}:8090`);
+ws.onopen = () => { $('wsState').textContent = '● terhubung'; $('wsState').className = 'ok'; };
+ws.onclose = () => { $('wsState').textContent = '● terputus'; $('wsState').className = 'err'; };
+ws.onmessage = (e) => add('wsLog', e.data);
+function wsSend() { const v = $('wsMsg').value; if (v) { ws.send(v); $('wsMsg').value = ''; } }
+
+// ---- MQTT ----
+const mq = mqtt.connect(`ws://${host}:9001`);
+mq.on('connect', () => { $('mqttState').textContent = '● terhubung'; $('mqttState').className = 'ok'; mq.subscribe('demo/#'); });
+mq.on('close', () => { $('mqttState').textContent = '● terputus'; $('mqttState').className = 'err'; });
+mq.on('message', (topic, payload) => add('mqttLog', `${topic}: ${payload.toString()}`));
+function mqttSend() { const v = $('mqttMsg').value; if (v) { mq.publish('demo/browser', v); $('mqttMsg').value = ''; } }
+
+// ---- RabbitMQ via API ----
+async function rmq(name, port) {
+  const message = $('rmqMsg').value || 'halo dari frontend';
+  try {
+    const r = await fetch(`http://${host}:${port}/rabbitmq/publish`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+    add('rmqLog', JSON.stringify(await r.json()));
+  } catch (e) { add('rmqLog', 'Error: ' + e.message); }
+}
+</script>
+</body>
+</html>
